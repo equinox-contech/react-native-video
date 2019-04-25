@@ -350,6 +350,10 @@ export default class Video extends Component {
   }
 }
 
+Video.defaultProps = {
+  disableFocus: false
+};
+
 Video.propTypes = {
   filter: PropTypes.oneOf([
     FilterType.NONE,

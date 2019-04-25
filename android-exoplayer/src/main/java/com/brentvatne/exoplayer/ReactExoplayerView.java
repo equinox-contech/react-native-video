@@ -146,7 +146,7 @@ class ReactExoplayerView extends FrameLayout implements
     private String textTrackType;
     private Dynamic textTrackValue;
     private ReadableArray textTracks;
-    private boolean disableFocus;
+    private boolean disableFocus = true;
     private boolean preventsDisplaySleepDuringVideoPlayback = true;
     private float mProgressUpdateInterval = 250.0f;
     private boolean playInBackground = false;
@@ -1269,6 +1269,7 @@ class ReactExoplayerView extends FrameLayout implements
 
     public void setDisableFocus(boolean disableFocus) {
         this.disableFocus = disableFocus;
+        requestAudioFocus();
     }
 
     public void setFullscreen(boolean fullscreen) {
