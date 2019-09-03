@@ -2,7 +2,9 @@ package com.brentvatne.exoplayer;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Handler;
@@ -10,9 +12,11 @@ import android.os.Message;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.accessibility.CaptioningManager;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import com.brentvatne.react.R;
 import com.brentvatne.receiver.AudioBecomingNoisyReceiver;
@@ -54,7 +58,6 @@ import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource
 import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
 import com.google.android.exoplayer2.trackselection.AdaptiveTrackSelection;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
-import com.google.android.exoplayer2.trackselection.FixedTrackSelection;
 import com.google.android.exoplayer2.trackselection.MappingTrackSelector;
 import com.google.android.exoplayer2.trackselection.TrackSelection;
 import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
@@ -62,7 +65,6 @@ import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultAllocator;
 import com.google.android.exoplayer2.upstream.BandwidthMeter;
 import com.google.android.exoplayer2.upstream.DefaultBandwidthMeter;
-import com.google.android.exoplayer2.util.MimeTypes;
 import com.google.android.exoplayer2.util.Util;
 import com.google.android.exoplayer2.ui.PlayerControlView;
 
@@ -108,6 +110,8 @@ class ReactExoplayerView extends FrameLayout implements
     private SimpleExoPlayer player;
     private DefaultTrackSelector trackSelector;
     private boolean playerNeedsSource;
+
+    private Dialog mFullScreenDialog;
 
     private int resumeWindow;
     private long resumePosition;
@@ -185,6 +189,7 @@ class ReactExoplayerView extends FrameLayout implements
         audioBecomingNoisyReceiver = new AudioBecomingNoisyReceiver(themedReactContext);
 
         initializePlayer();
+        initFullscreenDialog();
     }
 
 
@@ -298,6 +303,16 @@ class ReactExoplayerView extends FrameLayout implements
             }
         });
 
+        // Handle the full screen button event
+        FrameLayout fullScreenButton = playerControlView.findViewById(R.id.exo_fullscreen_button);
+        fullScreenButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setFullscreen(!isFullscreen);
+            }
+        });
+        updateFullScreenIcon(isFullscreen);
+
         // Invoking onPlayerStateChanged event for Player
         eventListener = new Player.EventListener() {
             @Override
@@ -320,10 +335,33 @@ class ReactExoplayerView extends FrameLayout implements
                 LayoutParams.MATCH_PARENT);
         playerControlView.setLayoutParams(layoutParams);
         int indexOfPC = indexOfChild(playerControlView);
+        int indexOfExoPlayerView = indexOfChild(exoPlayerView);
         if (indexOfPC != -1) {
             removeViewAt(indexOfPC);
         }
+        if (indexOfExoPlayerView == -1 || getChildCount() == 0 ) {
+            return;
+        }
         addView(playerControlView, 1, layoutParams);
+    }
+
+    private void updateFullScreenIcon(Boolean fullScreen) {
+        if(playerControlView != null && player != null) {
+            ImageView fullScreenIcon = playerControlView.findViewById(R.id.exo_fullscreen_icon);
+            if (fullScreen) {
+                fullScreenIcon.setImageResource(R.drawable.ic_fullscreen_exit);
+            } else {
+                fullScreenIcon.setImageResource(R.drawable.ic_fullscreen);
+            }
+        }
+    }
+
+    private void enableFullScreenButton(Boolean enable) {
+        if(playerControlView != null) {
+            FrameLayout fullScreenButton = playerControlView.findViewById(R.id.exo_fullscreen_button);
+            fullScreenButton.setAlpha(enable ? 1.0f : 0.5f);
+            fullScreenButton.setEnabled(enable);
+        }
     }
 
     /**
@@ -530,10 +568,11 @@ class ReactExoplayerView extends FrameLayout implements
 
     private void onStopPlayback() {
         if (isFullscreen) {
-            setFullscreen(false);
+            setFullscreen(!isFullscreen);
         }
         setKeepScreenOn(false);
         audioManager.abandonAudioFocus(this);
+        enableFullScreenButton(false);
     }
 
     private void updateResumePosition() {
@@ -620,6 +659,7 @@ class ReactExoplayerView extends FrameLayout implements
                 if(playerControlView != null) {
                     playerControlView.show();
                 }
+                enableFullScreenButton(true);
                 break;
             case ExoPlayer.STATE_ENDED:
                 text += "ended";
@@ -649,6 +689,45 @@ class ReactExoplayerView extends FrameLayout implements
             eventEmitter.load(player.getDuration(), player.getCurrentPosition(), width, height,
                     getAudioTrackInfo(), getTextTrackInfo(), getVideoTrackInfo());
         }
+    }
+
+    private void initFullscreenDialog() {
+        mFullScreenDialog = new Dialog(this.themedReactContext, android.R.style.Theme_Black_NoTitleBar_Fullscreen) {
+            public void onBackPressed() {
+                if (isFullscreen) {
+                    themedReactContext.getCurrentActivity().setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                    eventEmitter.fullscreenWillDismiss();
+                    Window window = themedReactContext.getCurrentActivity().getWindow();
+                    window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+                    closeFullscreenVideoDialog();
+                    eventEmitter.fullscreenDidDismiss();
+                }
+                super.onBackPressed();
+            }
+        };
+    }
+
+    private void closeFullscreenVideoDialog() {
+        ((ViewGroup)exoPlayerView.getParent()).removeView(exoPlayerView);
+        ((ViewGroup)playerControlView.getParent()).removeView(playerControlView);
+        LayoutParams layoutParams = new LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.MATCH_PARENT);
+        addView(exoPlayerView, layoutParams);
+        addView(playerControlView, layoutParams);
+        mFullScreenDialog.dismiss();
+        themedReactContext.getCurrentActivity().setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+    }
+
+    private void openFullscreenVideoDialog() {
+        ((ViewGroup) exoPlayerView.getParent()).removeView(exoPlayerView);
+        ((ViewGroup)playerControlView.getParent()).removeView(playerControlView);
+        LayoutParams layoutParams = new LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.MATCH_PARENT);
+        mFullScreenDialog.addContentView(exoPlayerView, layoutParams);
+        mFullScreenDialog.addContentView(playerControlView, layoutParams);
+        mFullScreenDialog.show();
     }
 
     private WritableArray getAudioTrackInfo() {
@@ -1123,8 +1202,9 @@ class ReactExoplayerView extends FrameLayout implements
 
     public void setFullscreen(boolean fullscreen) {
         if (fullscreen == isFullscreen) {
-            return; // Avoid generating events when nothing is changing
+            return;
         }
+        updateFullScreenIcon(fullscreen);
         isFullscreen = fullscreen;
 
         Activity activity = themedReactContext.getCurrentActivity();
@@ -1136,20 +1216,27 @@ class ReactExoplayerView extends FrameLayout implements
         int uiOptions;
         if (isFullscreen) {
             if (Util.SDK_INT >= 19) { // 4.4+
-                uiOptions = SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                uiOptions = SYSTEM_UI_FLAG_IMMERSIVE
+                        | SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | SYSTEM_UI_FLAG_FULLSCREEN;
             } else {
                 uiOptions = SYSTEM_UI_FLAG_HIDE_NAVIGATION
                         | SYSTEM_UI_FLAG_FULLSCREEN;
             }
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
             eventEmitter.fullscreenWillPresent();
             decorView.setSystemUiVisibility(uiOptions);
+            openFullscreenVideoDialog();
             eventEmitter.fullscreenDidPresent();
         } else {
             uiOptions = View.SYSTEM_UI_FLAG_VISIBLE;
+            activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
             eventEmitter.fullscreenWillDismiss();
             decorView.setSystemUiVisibility(uiOptions);
+            closeFullscreenVideoDialog();
             eventEmitter.fullscreenDidDismiss();
         }
     }
