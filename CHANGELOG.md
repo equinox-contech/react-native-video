@@ -1,5 +1,9 @@
 ## Changelog
 
+### Version 4.4.5
+
+* Adds full screen landscape support for Android
+
 ### Version 4.4.4
 * Handle racing conditions when props are setted on exoplayer
 
