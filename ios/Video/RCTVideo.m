@@ -156,7 +156,11 @@ static int const RCTVideoUnset = -1;
   viewController.showsPlaybackControls = YES;
   viewController.rctDelegate = self;
   viewController.preferredOrientation = _fullscreenOrientation;
-  
+
+  if (@available(iOS 9.0, *)) {
+    viewController.allowsPictureInPicturePlayback = _pictureInPicture;
+  }
+
   viewController.view.frame = self.bounds;
   viewController.player = player;
   return viewController;
@@ -904,7 +908,7 @@ static int const RCTVideoUnset = -1;
 }
 
 - (void)setupPipController {
-  if (!_pipController && _playerLayer && [AVPictureInPictureController isPictureInPictureSupported]) {
+  if (_pictureInPicture && !_pipController && _playerLayer && [AVPictureInPictureController isPictureInPictureSupported]) {
     // Create new controller passing reference to the AVPlayerLayer
     _pipController = [[AVPictureInPictureController alloc] initWithPlayerLayer:_playerLayer];
     _pipController.delegate = self;
